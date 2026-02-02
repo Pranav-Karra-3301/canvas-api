@@ -45,6 +45,24 @@ describe("queryParameters", () => {
     const expected = "";
     expect(stringifyQueryParameters(input)).toEqual(expected);
   });
+
+  it("should URL-encode special characters in values", () => {
+    const input = { search: "hello world", filter: "a&b=c" };
+    const expected = "?search=hello%20world&filter=a%26b%3Dc";
+    expect(stringifyQueryParameters(input)).toEqual(expected);
+  });
+
+  it("should URL-encode special characters in keys", () => {
+    const input = { "my key": "value", "another&key": "test" };
+    const expected = "?my%20key=value&another%26key=test";
+    expect(stringifyQueryParameters(input)).toEqual(expected);
+  });
+
+  it("should URL-encode special characters in array values", () => {
+    const input = { tags: ["hello world", "foo&bar"] };
+    const expected = "?tags[]=hello%20world&tags[]=foo%26bar";
+    expect(stringifyQueryParameters(input)).toEqual(expected);
+  });
 });
 
 describe("listItems", () => {
@@ -95,6 +113,21 @@ describe("listItems", () => {
         query: { other: 2 },
       })
       .reply(200, [4, 5]);
+
+    mockPool
+      .intercept({ path: "/array-header/page1", method: "GET" })
+      .reply(200, [1, 2], {
+        headers: {
+          link: [
+            '<https://canvas.local/array-header/page2>; rel="next"',
+            '<https://canvas.local/array-header/page1>; rel="prev"',
+          ],
+        },
+      });
+
+    mockPool
+      .intercept({ path: "/array-header/page2", method: "GET" })
+      .reply(200, [3, 4]);
   });
 
   afterAll(() => {
@@ -122,6 +155,13 @@ describe("listItems", () => {
       .toArray();
 
     expect(output).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("handles array Link headers correctly", async () => {
+    const canvas = new CanvasApi("https://canvas.local/", "");
+    const output = await canvas.listItems("array-header/page1").toArray();
+
+    expect(output).toEqual([1, 2, 3, 4]);
   });
 });
 
@@ -202,6 +242,7 @@ describe("CanvasApiResponseError", () => {
         "json": {
           "message": "Missing parameters",
         },
+        "parseError": undefined,
         "statusCode": 400,
         "text": "{"message": "Missing parameters"}",
       }
@@ -223,6 +264,7 @@ describe("CanvasApiResponseError", () => {
         "json": {
           "message": "Method not allowed",
         },
+        "parseError": undefined,
         "statusCode": 405,
         "text": "{ "message": "Method not allowed" }",
       }
@@ -240,6 +282,7 @@ describe("CanvasApiResponseError", () => {
         "body": undefined,
         "headers": {},
         "json": undefined,
+        "parseError": [SyntaxError: Unexpected token 'I', "I am a tea"... is not valid JSON],
         "statusCode": 418,
         "text": "I am a teapot and invalid JSON )",
       }

@@ -27,7 +27,7 @@ describe("Rate limiter works", () => {
     const res = await canvas.get("call");
     const end = performance.now();
 
-    expect(res.json.msg).toEqual("ok");
+    expect((res.json as { msg: string }).msg).toEqual("ok");
     // The reset is evert 1000ms nad calls are resolved locally
     expect(end - start).toBeGreaterThan(900);
     expect(end - start).toBeLessThan(1100);
@@ -65,7 +65,7 @@ describe("Rate limiter works", () => {
     const end = performance.now();
 
     expect(err).toBeDefined();
-    expect(res.json.msg).toEqual("ok");
+    expect((res.json as { msg: string }).msg).toEqual("ok");
     // The reset is evert 1000ms nad calls are resolved locally
     expect(end - start).toBeLessThan(50);
   });

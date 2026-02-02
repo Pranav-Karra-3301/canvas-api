@@ -1,5 +1,4 @@
 /* eslint-disable */
-/* eslint-disable */
 require("dotenv").config();
 const canvasApiUrl = process.env.CANVAS_API_URL;
 const { CanvasApi, CanvasApiResponseError } = require("@kth/canvas-api");
@@ -12,7 +11,7 @@ async function start() {
   try {
     for await (const coursesResponse of pages) {
       // `courses` is the Response object that contains a list of courses
-      const courses = coursesResponse.body;
+      const courses = coursesResponse.json;
 
       for (const course of courses) {
         console.log(course.id, course.name);

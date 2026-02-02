@@ -8,5 +8,5 @@ export default tseslint.config(
     ignores: ["dist/"],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommended
+  ...tseslint.configs.recommended,
 );

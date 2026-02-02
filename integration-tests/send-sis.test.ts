@@ -15,11 +15,11 @@ describe("Send SIS Import CSV", () => {
   it("should be sent correctly", async () => {
     const client = new CanvasApi(
       process.env.CANVAS_API_URL!,
-      process.env.CANVAS_API_TOKEN!
+      process.env.CANVAS_API_TOKEN!,
     );
     const file = new File(
       [await readFile(resolve(__dirname, "./test.csv"))],
-      "test.csv"
+      "test.csv",
     );
     const { json, statusCode } = await client.sisImport(file);
     expect(statusCode).toBe(200);

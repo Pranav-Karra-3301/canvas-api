@@ -16,12 +16,14 @@ import { CanvasApi } from "@kth/canvas-api";
 console.log("Making a GET request to /accounts/1");
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 
 const { json } = await canvas.get("accounts/1");
 console.log(json);
 ```
+
+> **Deprecation Notice**: The `.body` property on response objects is deprecated. Use `.json` for parsed JSON data or `.text` for raw string responses instead. The `.body` property will be removed in a future major version.
 
 ## Features
 
@@ -34,7 +36,7 @@ import { CanvasApi } from "@kth/canvas-api";
 
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 
 const buffer = await readFile("<FILE PATH>");
@@ -53,7 +55,7 @@ import { CanvasApi } from "@kth/canvas-api";
 
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 
 const buffer = await readFile("<FILE PATH>");
@@ -65,7 +67,7 @@ formData.set("key", "value");
 const { json } = await canvas.request(
   "accounts/1/sis_import",
   "POST",
-  formData
+  formData,
 );
 console.log(json);
 ```
@@ -79,7 +81,7 @@ import { CanvasApi } from "@kth/canvas-api";
 
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 
 const pages = canvas.listPages("accounts/1/courses");
@@ -98,7 +100,7 @@ import { CanvasApi } from "@kth/canvas-api";
 
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 
 const courses = canvas.listItems("accounts/1/courses");
@@ -110,7 +112,22 @@ for await (const course of courses) {
 
 ### Rate Limiting
 
-CanvasApi will automatically handle rate limiting by throttling calls. Throttling is applied globally for all your CanvasApi instances. This is done using a FIFO-queue where each call is resolved sequentially. If you have slow calls that you want to resolve in parallell you can disable throttling:
+CanvasApi will automatically handle rate limiting by throttling calls. Throttling is applied globally for all your CanvasApi instances using a **global singleton queue**. This means that even if you create multiple `CanvasApi` instances, they all share the same rate limiter to prevent overwhelming the Canvas API.
+
+The rate limiter uses a FIFO-queue where each call is resolved sequentially. If Canvas returns a rate limit error (HTTP 403 with "Rate Limit Exceeded"), the library will automatically retry the request up to **5 times** with appropriate delays.
+
+#### Configuration Options
+
+```ts
+const canvas = new CanvasApi("https://canvas.local/", "token", {
+  // Customize the rate limit check interval (default: 1000ms)
+  rateLimitIntervalMs: 500,
+});
+```
+
+#### Disabling Throttling
+
+If you have slow calls that you want to resolve in parallel, you can disable throttling for specific instances:
 
 ```ts
 const canvas = new CanvasApi("https://canvas.local/", "");
@@ -120,7 +137,41 @@ const canvasWithoutThrottling = new CanvasApi("https://canvas.local/", "", {
 });
 ```
 
-You can mix instances with and without throttling.
+You can mix instances with and without throttling. Instances with throttling disabled will bypass the global queue entirely.
+
+### Debug Logging
+
+Enable debug logging to troubleshoot rate limiting and request issues:
+
+```bash
+CANVAS_API_DEBUG=true node your-script.js
+```
+
+This will output rate limiter activity to stderr, including:
+
+- When the work loop starts/stops
+- Rate limit bounces and delays
+- Request completion status
+
+### TypeScript Types
+
+The library exports the following types for TypeScript users:
+
+```typescript
+import {
+  CanvasApi,
+  CanvasApiResponse,
+  QueryParams,
+  RequestOptions,
+  ExtendedGenerator,
+  // Error classes
+  CanvasApiError,
+  CanvasApiResponseError,
+  CanvasApiRequestError,
+  CanvasApiTimeoutError,
+  CanvasApiPaginationError,
+} from "@kth/canvas-api";
+```
 
 ### Type safety
 
@@ -132,7 +183,7 @@ import { z } from "zod";
 
 const canvas = new CanvasApi(
   "<YOUR CANVAS INSTANCE>/api/v1",
-  "<YOUR CANVAS TOKEN>"
+  "<YOUR CANVAS TOKEN>",
 );
 const accountSchema = z.object({
   id: z.number(),

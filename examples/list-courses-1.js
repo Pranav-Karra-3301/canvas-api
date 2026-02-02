@@ -1,5 +1,4 @@
-/* eslint-disable */
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-var-requires, no-undef */
 require("dotenv").config();
 const canvasApiUrl = process.env.CANVAS_API_URL;
 const canvasApiToken = process.env.CANVAS_API_TOKEN;
@@ -13,7 +12,7 @@ async function start() {
   // Now `pages` is an iterator that goes through every page
   for await (const coursesResponse of pages) {
     // `courses` is the Response object that contains a list of courses
-    const courses = coursesResponse.body;
+    const courses = coursesResponse.json;
 
     for (const course of courses) {
       console.log(course.id, course.name);

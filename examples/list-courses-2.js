@@ -1,5 +1,4 @@
 /* eslint-disable */
-/* eslint-disable */
 require("dotenv").config();
 const canvasApiUrl = process.env.CANVAS_API_URL;
 const canvasApiToken = process.env.CANVAS_API_TOKEN;

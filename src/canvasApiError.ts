@@ -1,4 +1,4 @@
-import { CanvasApiResponse } from "./canvasApi";
+import { CanvasApiResponse } from "./canvasApiResponse";
 /** Super-class for CanvasApi library */
 export class CanvasApiError extends Error {
   constructor(message: string) {
@@ -29,11 +29,10 @@ export class CanvasApiResponseError extends CanvasApiError {
  */
 export class CanvasApiRequestError extends CanvasApiError {
   constructor(message?: string) {
-    // TODO
     super(
       `Canvas API Request Error: ${
         message ?? "there is something wrong with your request"
-      }`
+      }`,
     );
     this.name = "CanvasApiRequestError";
   }
@@ -52,7 +51,7 @@ export class CanvasApiPaginationError extends CanvasApiError {
 
   constructor(response: CanvasApiResponse) {
     super(
-      "This endpoint did not responded with a list. Use `listPages` or `get` instead"
+      "This endpoint did not responded with a list. Use `listPages` or `get` instead",
     );
     this.response = response;
     this.name = "CanvasApiPaginationError";
@@ -73,7 +72,7 @@ export function canvasApiErrorDecorator(
     | CanvasApiPaginationError
     | CanvasApiTimeoutError
     | CanvasApiRequestError,
-  stack: string | undefined
+  stack: string | undefined,
 ) {
   if (stack !== undefined) {
     error.stack = stack.replace("Error", `${error.name}: ${error.message}`);

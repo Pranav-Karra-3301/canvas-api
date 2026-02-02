@@ -1,3 +1,16 @@
+/**
+ * Rate limiter for Canvas API requests.
+ *
+ * Strategy:
+ * 1. All requests are queued in a FIFO queue
+ * 2. Requests are processed one at a time with configurable interval
+ * 3. On 403 "Rate Limit Exceeded", the request is re-queued with backoff
+ * 4. If X-Rate-Limit-Remaining header shows low quota, preemptively slows down
+ * 5. Maximum retry count prevents infinite loops
+ *
+ * Enable debug logging with CANVAS_API_DEBUG=true environment variable.
+ */
+
 import { URL, UrlObject } from "url";
 import { request as _request } from "undici";
 import type { Dispatcher } from "undici";
@@ -6,12 +19,21 @@ type TRateLimitWorkItem = [
   (value: Dispatcher.ResponseData) => void,
   (err: unknown) => void,
   () => Promise<Dispatcher.ResponseData>,
-  number
+  number,
+  number, // retryCount
 ];
 
 type TReadOnlyRateLimiterFactoryOptions = {
   limitIntervalMs: number;
 };
+
+const MAX_RETRIES = 5;
+const DEBUG =
+  typeof process !== "undefined" && process.env?.CANVAS_API_DEBUG === "true";
+
+function debug(msg: string) {
+  if (DEBUG) console.debug(`[canvas-api:ratelimit] ${msg}`);
+}
 
 export function rateLimitedRequestFactory({
   limitIntervalMs,
@@ -24,13 +46,12 @@ export function rateLimitedRequestFactory({
 
   const _setDelayToStartAtNextInterval = () => {
     // Limit reached, wait until period is over
-    // TODO: Consider logging rate limit issues
     const delta = Date.now() - _intervalPeriodStart;
     const calcDelay = limitIntervalMs - delta;
     if (_nextDelay < calcDelay) {
       _nextDelay = calcDelay;
     }
-    // console.debug(`Bouncing on rate limiter: ${delta}`);
+    debug(`Bouncing on rate limiter: ${delta}`);
   };
 
   const _checkAndResetInterval = () => {
@@ -40,7 +61,7 @@ export function rateLimitedRequestFactory({
       // Reset interval every 1000ms
       _intervalPeriodStart = Date.now();
       _nextDelay = 0;
-      // console.debug(`Reset limiter: ${_nextDelay} (${delta})`);
+      debug(`Reset limiter: ${_nextDelay} (${delta})`);
       return;
     }
   };
@@ -59,7 +80,7 @@ export function rateLimitedRequestFactory({
       body,
       signal,
     }: Omit<Dispatcher.RequestOptions, "origin" | "path" | "method"> &
-      Partial<Pick<Dispatcher.RequestOptions, "method">>
+      Partial<Pick<Dispatcher.RequestOptions, "method">>,
   ): Promise<Dispatcher.ResponseData> => {
     return new Promise((resolve, reject) => {
       _pendingWorkItems.push([
@@ -67,6 +88,7 @@ export function rateLimitedRequestFactory({
         reject,
         async () => await _request(url, { method, headers, body, signal }),
         _getCallCounter(),
+        0, // initial retryCount
       ]);
 
       // We need to wrap the work loop in a function so we can restart it
@@ -77,7 +99,7 @@ export function rateLimitedRequestFactory({
           _isIdle = false;
           _intervalPeriodStart = Date.now();
 
-          // console.debug("Work loop started...");
+          debug("Work loop started...");
           let currentWorkItem: TRateLimitWorkItem;
           try {
             // This is the main loop
@@ -90,14 +112,27 @@ export function rateLimitedRequestFactory({
               _checkAndResetInterval();
 
               currentWorkItem = _pendingWorkItems.shift()!;
-              const [workResolve, workReject, workFn, _idCounter] =
+              const [workResolve, workReject, workFn, _idCounter, retryCount] =
                 currentWorkItem;
               workFn()
                 .then(async (res: Dispatcher.ResponseData) => {
                   if (res?.statusCode === 403) {
                     const text = await res.body.text();
                     if (text.includes("Rate Limit Exceeded")) {
-                      // console.debug(`...429 call ${_idCounter}, delay: ${_nextDelay}, ${Date.now() - _intervalPeriodStart}, -- ${_isIdle ? "IDLE" : "RUNNING"}`);
+                      debug(
+                        `...429 call ${_idCounter}, delay: ${_nextDelay}, ${
+                          Date.now() - _intervalPeriodStart
+                        }, -- ${_isIdle ? "IDLE" : "RUNNING"}`,
+                      );
+                      // Check if max retries exceeded
+                      if (retryCount >= MAX_RETRIES) {
+                        workReject(
+                          new Error(
+                            "Canvas API rate limit: max retries exceeded",
+                          ),
+                        );
+                        return;
+                      }
                       // Return the work item to the stack for retry
                       // WARNING: Don't use currentWorkItem, it is mutated when iterating through the while loop
                       _pendingWorkItems.unshift([
@@ -105,6 +140,7 @@ export function rateLimitedRequestFactory({
                         workReject,
                         workFn,
                         _idCounter,
+                        retryCount + 1,
                       ]);
                       _setDelayToStartAtNextInterval();
                       startWorkLoop();
@@ -116,8 +152,24 @@ export function rateLimitedRequestFactory({
                     // the content
                     res.body.text = async () => text;
                   }
-                  // console.debug(`+++200 call ${_idCounter}, delay: ${_nextDelay}, ${Date.now() - _intervalPeriodStart}, -- ${_isIdle ? "IDLE" : "RUNNING"}`);
+                  debug(
+                    `+++200 call ${_idCounter}, delay: ${_nextDelay}, ${
+                      Date.now() - _intervalPeriodStart
+                    }, -- ${_isIdle ? "IDLE" : "RUNNING"}`,
+                  );
                   workResolve(res);
+
+                  // Check rate limit headers and preemptively slow down if needed
+                  const remaining = res.headers?.["x-rate-limit-remaining"];
+                  if (remaining !== undefined) {
+                    const remainingNum = parseInt(String(remaining), 10);
+                    if (!isNaN(remainingNum) && remainingNum < 50) {
+                      debug(
+                        `Rate limit remaining: ${remainingNum}, preemptively slowing down`,
+                      );
+                      _setDelayToStartAtNextInterval();
+                    }
+                  }
                 })
                 .catch(workReject);
             }
@@ -128,11 +180,11 @@ export function rateLimitedRequestFactory({
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const [_workResolve, workReject, _workFn, _idCounter] =
                 currentWorkItem;
-              workReject(currentWorkItem);
+              workReject(err);
             }
           } finally {
             _isIdle = true;
-            // console.debug("...work loop stopped");
+            debug("...work loop stopped");
           }
         }
       };
